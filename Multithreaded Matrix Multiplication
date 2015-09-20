@@ -1,0 +1,128 @@
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <semaphore.h>
+#include <string>
+#include<sstream>
+#include<vector>
+#include <pthread.h>
+
+std::vector<std::vector<int> >inp_matrix1,inp_matrix2,outp_matrix; //all needed matrices
+std::vector<int> products; //allocate enough space to place the numbers needed to add for final result --will overwrite
+int m1_row,m2_row,m1_col,m2_col; //dimension of both input matrices
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void read_file(std::string infile){
+	std::ifstream inp(infile.c_str());
+	if (!inp){
+		std::cout << "Cannot open file." << std::endl;
+	}else{
+		std::string file_line;
+		bool delim_hit = false;
+		m1_row = 0,m2_row = 0,m1_col = 0, m2_col = 0;
+
+		while (std::getline(inp, file_line)){
+			if(file_line.at(0) == '*'){
+				delim_hit = true;
+			}else{
+				std::vector<int> column;
+				//seperate read line into row of numbers
+				std::stringstream parse(file_line);
+				while(parse){
+					int val;
+					if(!delim_hit){
+						parse>>val;
+						column.push_back(val);
+					}else{
+						parse>>val;
+						column.push_back(val);
+					}
+				}
+				if(!delim_hit){
+					m1_col = column.size() - 1;
+					inp_matrix1.push_back(column);
+					m1_row++;
+				}else{
+					m2_col = column.size() - 1;
+					inp_matrix2.push_back(column);
+					m2_row++;
+				} //single row finished
+			}
+		}//matrices finished
+	}
+	inp.close();
+}
+void *matrix_mult(void* ptr){ //thread fnc
+	int *arr = (int*)malloc(sizeof(ptr)); //where to put value computed by operation
+	arr = (int*)ptr;
+	int row = arr[0], col = arr[1], t_num = arr[2], prd = 0;
+	pthread_mutex_lock(&mutex);
+		//multiply 2 nums
+		prd = (inp_matrix1[row][t_num])*(inp_matrix2[t_num][col]);
+		products.push_back(prd);
+	pthread_mutex_unlock(&mutex);
+	return NULL;
+}
+
+int main(){
+//filenames
+	std::string file1, file2 = "output.txt";
+	std::cout << "Enter the name of the file you wish to read from: ";
+	std::cin >> file1;
+	read_file(file1);
+	//check for improper matrices
+	if((m2_col < 2)||(m1_row < 2)||(m1_col != m2_row)){
+		std::cout<<"Incorrect array size. ";
+		//pause window until user enters char
+		char end;
+		std::cout << "Press any key to continue...";
+		std::cin >> end;	
+		return 0;
+	}
+	for(int i= 0; i < m1_row; ++i){
+		std::vector<int> column;
+		 for(int j = 0; j < m2_col; ++j){
+			 //position in outp_matrix that determines where to draw from
+			int outm_entry = 0;
+			if(!products.empty()){
+				products.clear();
+			}
+			for(int n = 0; n < m1_col; ++n){//get correct number of threads
+				pthread_t mult_thread;
+				int err_ck;
+				int arr[3] = {i,j,n}; //values to pass to thread: row, col, thread #
+				err_ck = pthread_create(&mult_thread, NULL, matrix_mult, (void*)arr);
+				if (err_ck){
+					std::cout<<"Error with creating thread. Error code: "<<err_ck;
+					return 0;
+				}
+				pthread_join(mult_thread, NULL);
+			}
+			for(int a = 0; a < m1_col; ++a){
+				outm_entry += products.at(a);
+			}
+			column.push_back(outm_entry);
+		 }
+		 outp_matrix.push_back(column);
+	}
+	//write result
+	std::ofstream outp(file2.c_str());
+	for(int i = 0; i < m1_row; ++i){
+		for(int j = 0; j < m2_col; ++j){
+			outp<<outp_matrix[i][j];
+			outp<<" ";
+			std::cout<<outp_matrix[i][j]<<" ";
+		}
+		outp<<'\n';
+		std::cout<<"\n";
+	}
+	outp.close();
+	//pause window until user enters char
+	char end;
+	std::cout << "Press any key to continue...";
+	std::cin >> end;
+	
+	return 0;
+}
