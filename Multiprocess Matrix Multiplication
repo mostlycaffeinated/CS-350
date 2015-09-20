@@ -1,0 +1,126 @@
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <semaphore.h>
+#include <string>
+#include<sstream>
+#include<vector>
+#include  <sys/types.h>
+//#include  <sys/ipc.h>
+#include  <sys/shm.h>
+#include <unistd.h>
+
+std::vector<std::vector<int> >inp_matrix1,inp_matrix2;
+int **outp_matrix;
+int m1_row,m2_row,m1_col,m2_col; //dimension of both input matrices
+sem_t mutex;
+
+void read_file(std::string infile){
+	std::ifstream inp(infile.c_str());
+	if (!inp){
+		std::cout << "Cannot open file." << std::endl;
+	}else{
+		std::string file_line;
+		bool delim_hit = false;
+		m1_row = 0,m2_row = 0,m1_col = 0, m2_col = 0;
+
+		while (std::getline(inp, file_line)){
+			if(file_line.at(0) == '*'){
+				delim_hit = true;
+			}else{
+				std::vector<int> column;
+				//seperate read line into row of numbers
+				std::stringstream parse(file_line);
+				while(parse){
+					int val;
+					if(!delim_hit){
+						parse>>val;
+						column.push_back(val);
+					}else{
+						parse>>val;
+						column.push_back(val);
+					}
+				}
+				if(!delim_hit){
+					m1_col = column.size() - 1;
+					inp_matrix1.push_back(column);
+					m1_row++;
+				}else{
+					m2_col = column.size() - 1;
+					inp_matrix2.push_back(column);
+					m2_row++;
+				} //single row finished
+			}
+		}//matrices finished
+	}
+	inp.close();
+}
+void write_file(std::string outfile){
+	//write result
+	std::ofstream outp(outfile.c_str());
+	for(int i = 0; i < m1_row; ++i){
+		for(int j = 0; j < m2_col; ++j){
+			outp<<outp_matrix[i][j];
+			outp<<" ";
+			std::cout<<outp_matrix[i][j]<<" ";
+		}
+		outp<<'\n';
+		std::cout<<"\n";
+	}
+	outp.close();
+}
+int calc_num_at_index(int i, int j, int k){//get result to put into matrix at index
+	int val = inp_matrix1[i][k]*inp_matrix2[k][j];
+	return val;
+}
+
+int main(){
+	std::string file1, file2 = "output.txt";
+
+	std::cout << "Enter the name of the file you wish to read from: ";
+	std::cin >> file1;
+	read_file(file1);
+
+	outp_matrix = (int**)malloc(sizeof(int)*m1_row);
+	for (int i = 0; i < m1_row; i++){
+		outp_matrix[i] = (int*)malloc(sizeof(int)*m2_col);
+	}
+
+	//check for improper matrices
+	if((m2_col < 2)||(m1_row < 2)||(m1_col != m2_row)){
+		std::cout<<"Incorrect array size. ";
+	}else{
+		outp_matrix = shmget();
+		sem_init(&mutex,1,0);
+		//matrix multiplication
+		for(int i= 0; i < m1_row; ++i){
+			 for(int j = 0; j < m2_col; ++j){
+				pid_t pid = fork();
+				if(pid == 0){//child
+					int prod = 0;
+					for(int k = 0; k < m1_col; ++k){
+						prod += calc_num_at_index(i, j, k);
+					 }
+					//input to matrix
+					sem_wait(&mutex);
+					outp_matrix[i][j] = prod;
+					sem_post(&mutex);
+					exit(0);
+				}else if(pid > 0){//parent
+					wait(NULL);
+				}else{//error
+					std::cout<<"Something went wrong when forking.";
+				}
+			 }
+		}	
+		write_file(file2);
+	}	
+	//pause window until user enters char
+	char end;
+	std::cout << "Press any key to continue...";
+	std::cin >> end;
+
+	return 0;
+}
